@@ -166,11 +166,52 @@ func (s *SQLite) BookingCapacity(ctx context.Context, sid int64) (int, int, erro
 	return active, capacity, nil
 }
 func (s *SQLite) CreateBooking(ctx context.Context, aid, sid, cid int64, key string) (domain.Booking, error) {
-	res, err := s.db.ExecContext(ctx, "INSERT INTO bookings(athlete_id,slot_id,coach_id,status,idempotency_key,version) VALUES(?,?,?,?,?,1)", aid, sid, cid, domain.BookingHeld, key)
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.Booking{}, err
 	}
+	defer tx.Rollback()
+	// Re-check capacity inside the transaction so concurrent reservations cannot
+	// both observe free capacity. A SQLite (modernc) writer transaction takes the
+	// database write lock for the duration of the commit, serializing competing
+	// inserts: the second BEGIN will block on busy_timeout until the first commits,
+	// then re-read the freshly incremented active count.
+	var status string
+	var capacity int
+	if err = tx.QueryRowContext(ctx, "SELECT t.status,v.capacity FROM training_slots t JOIN venues v ON v.id=t.venue_id WHERE t.id=?", sid).Scan(&status, &capacity); err != nil {
+		return domain.Booking{}, appErr.ErrNotFound
+	}
+	if status != "open" {
+		return domain.Booking{}, appErr.ErrConflict
+	}
+	var active int
+	if err = tx.QueryRowContext(ctx, "SELECT COUNT(*) FROM bookings WHERE slot_id=? AND status IN ('held','confirmed')", sid).Scan(&active); err != nil {
+		return domain.Booking{}, err
+	}
+	if active >= capacity {
+		return domain.Booking{}, appErr.ErrCapacity
+	}
+	res, err := tx.ExecContext(ctx, "INSERT INTO bookings(athlete_id,slot_id,coach_id,status,idempotency_key,version) VALUES(?,?,?,?,?,1)", aid, sid, cid, domain.BookingHeld, key)
+	if err != nil {
+		if stringsContains(err.Error(), "UNIQUE") {
+			var existing domain.Booking
+			var st string
+			if qErr := tx.QueryRowContext(ctx, "SELECT id,athlete_id,slot_id,coach_id,status,version FROM bookings WHERE idempotency_key=?", key).Scan(&existing.ID, &existing.AthleteID, &existing.SlotID, &existing.CoachID, &st, &existing.Version); qErr != nil {
+				return domain.Booking{}, qErr
+			}
+			existing.Status = domain.BookingStatus(st)
+			existing.IdempotencyKey = key
+			if err = tx.Commit(); err != nil {
+				return domain.Booking{}, err
+			}
+			return existing, nil
+		}
+		return domain.Booking{}, err
+	}
 	id, _ := res.LastInsertId()
+	if err = tx.Commit(); err != nil {
+		return domain.Booking{}, err
+	}
 	return domain.Booking{ID: id, AthleteID: aid, SlotID: sid, CoachID: cid, Status: domain.BookingHeld, IdempotencyKey: key, Version: 1}, nil
 }
 func (s *SQLite) TransitionBooking(ctx context.Context, id int64, from, to domain.BookingStatus) (domain.Booking, error) {
