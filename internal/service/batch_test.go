@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"github.com/11DingKing/robot-athlete-village/internal/audit"
 	"github.com/11DingKing/robot-athlete-village/internal/domain"
 	"github.com/11DingKing/robot-athlete-village/internal/repository"
@@ -37,6 +38,31 @@ func TestBookAndConfirm(t *testing.T) {
 	book, e := b.BookAndConfirm(context.Background(), u, domain.BookingRequest{AthleteID: 1, SlotID: 1, CoachID: 2, IdempotencyKey: "batch-book"})
 	if e != nil || book.Status != domain.BookingConfirmed {
 		t.Fatalf("%+v %v", book, e)
+	}
+}
+func TestBookAndConfirmReleasesHeldSlotOnConfirmFailure(t *testing.T) {
+	b := batchService(t)
+	coach := domain.User{ID: 2, Role: domain.RoleCoach}
+	// Slot 3 belongs to venue 2 (capacity 4). Fill it to the limit.
+	var last int64
+	for i := 0; i < 4; i++ {
+		bk, e := b.village.ReserveTraining(context.Background(), coach, 1, 3, fmt.Sprintf("fill-%d", i))
+		if e != nil {
+			t.Fatal(e)
+		}
+		last = bk.ID
+	}
+	// Reserving again must hit capacity while all four are held.
+	if _, e := b.village.ReserveTraining(context.Background(), coach, 1, 3, "overflow"); e == nil {
+		t.Fatal("expected capacity exceeded")
+	}
+	// A failed confirmation leaves the booking held; compensating it must
+	// cancel the held booking and free the slot for the next robot.
+	if e := b.village.CompensateFailedConfirmation(context.Background(), coach, last); e != nil {
+		t.Fatalf("compensate: %v", e)
+	}
+	if _, e := b.village.ReserveTraining(context.Background(), coach, 1, 3, "reclaim"); e != nil {
+		t.Fatalf("reserve after compensate: %v", e)
 	}
 }
 func TestCloseExpired(t *testing.T) {

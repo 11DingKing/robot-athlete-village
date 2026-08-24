@@ -81,8 +81,16 @@ func (v *Village) CompensateFailedConfirmation(ctx context.Context, u domain.Use
 	if err := auth.RequireRole(u, domain.RoleCoach, domain.RoleAdmin); err != nil {
 		return err
 	}
-	_, err := v.store.TransitionBooking(ctx, id, domain.BookingConfirmed, domain.BookingCancelled)
-	return err
+	// Confirmation failed, so the booking never left the held state; release
+	// the held slot by cancelling from held (confirmed->cancelled is invalid
+	// here and would leave the placeholder occupying capacity).
+	_, err := v.store.TransitionBooking(ctx, id, domain.BookingHeld, domain.BookingCancelled)
+	if err != nil {
+		v.record(ctx, u.ID, "booking", fmt.Sprint(id), "compensate", "failed")
+		return err
+	}
+	v.record(ctx, u.ID, "booking", fmt.Sprint(id), "compensate", "success")
+	return nil
 }
 func (v *Village) Assign(ctx context.Context, u domain.User, eid, aid int64) (domain.Equipment, error) {
 	if err := auth.RequireRole(u, domain.RoleCoach, domain.RoleAdmin); err != nil {
