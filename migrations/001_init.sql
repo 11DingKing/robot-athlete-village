@@ -1,0 +1,16 @@
+CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS users(id INTEGER PRIMARY KEY, email TEXT NOT NULL UNIQUE, password_hash TEXT NOT NULL, role TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS sessions(id TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id), expires_at TEXT NOT NULL, revoked_at TEXT, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS delegations(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, country_code TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS athletes(id INTEGER PRIMARY KEY, delegation_id INTEGER NOT NULL REFERENCES delegations(id), display_name TEXT NOT NULL, category TEXT NOT NULL, status TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS rooms(id INTEGER PRIMARY KEY, code TEXT NOT NULL UNIQUE, capacity INTEGER NOT NULL, occupied INTEGER NOT NULL DEFAULT 0, version INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS stays(id INTEGER PRIMARY KEY, delegation_id INTEGER NOT NULL REFERENCES delegations(id), room_id INTEGER NOT NULL REFERENCES rooms(id), status TEXT NOT NULL, check_in TEXT NOT NULL, check_out TEXT, idempotency_key TEXT NOT NULL UNIQUE, version INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS venues(id INTEGER PRIMARY KEY, name TEXT NOT NULL UNIQUE, sport TEXT NOT NULL, capacity INTEGER NOT NULL, active INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS training_slots(id INTEGER PRIMARY KEY, venue_id INTEGER NOT NULL REFERENCES venues(id), starts_at TEXT NOT NULL, ends_at TEXT NOT NULL, status TEXT NOT NULL, UNIQUE(venue_id, starts_at));
+CREATE TABLE IF NOT EXISTS bookings(id INTEGER PRIMARY KEY, athlete_id INTEGER NOT NULL REFERENCES athletes(id), slot_id INTEGER NOT NULL REFERENCES training_slots(id), coach_id INTEGER NOT NULL REFERENCES users(id), status TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE, version INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS equipment(id INTEGER PRIMARY KEY, serial TEXT NOT NULL UNIQUE, kind TEXT NOT NULL, status TEXT NOT NULL, assigned_athlete_id INTEGER REFERENCES athletes(id), version INTEGER NOT NULL DEFAULT 1);
+CREATE TABLE IF NOT EXISTS maintenance_jobs(id INTEGER PRIMARY KEY, equipment_id INTEGER NOT NULL REFERENCES equipment(id), status TEXT NOT NULL, attempts INTEGER NOT NULL DEFAULT 0, next_run_at TEXT NOT NULL, last_error TEXT);
+CREATE TABLE IF NOT EXISTS checkins(id INTEGER PRIMARY KEY, athlete_id INTEGER NOT NULL REFERENCES athletes(id), event_code TEXT NOT NULL, checked_at TEXT NOT NULL, idempotency_key TEXT NOT NULL UNIQUE);
+CREATE TABLE IF NOT EXISTS audit_events(id INTEGER PRIMARY KEY, actor_user_id INTEGER REFERENCES users(id), entity_type TEXT NOT NULL, entity_id TEXT NOT NULL, action TEXT NOT NULL, result TEXT NOT NULL, request_id TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE INDEX IF NOT EXISTS idx_slots_window ON training_slots(starts_at, ends_at, status);
+CREATE INDEX IF NOT EXISTS idx_jobs_ready ON maintenance_jobs(status, next_run_at);
