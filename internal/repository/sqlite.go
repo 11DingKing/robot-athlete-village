@@ -79,27 +79,31 @@ func (s *SQLite) CreateStay(ctx context.Context, did, rid int64, key string, now
 	if occ >= cap {
 		return domain.Stay{}, appErr.ErrCapacity
 	}
-	if err = tx.Commit(); err != nil {
-		return domain.Stay{}, err
-	}
-	if err = s.reserveRoomBeforeStay(ctx, rid, ver); err != nil {
-		return domain.Stay{}, err
-	}
-	tx, err = s.db.BeginTx(ctx, nil)
+	// Reserve the room and insert the stay in the same transaction so a failed
+	// insertion (e.g. invalid delegation/athlete reference) rolls back the
+	// occupied increment instead of leaking a phantom occupancy slot.
+	reserved, err := tx.ExecContext(ctx, "UPDATE rooms SET occupied=occupied+1,version=version+1 WHERE id=? AND version=?", rid, ver)
 	if err != nil {
 		return domain.Stay{}, err
+	}
+	changed, err := reserved.RowsAffected()
+	if err != nil {
+		return domain.Stay{}, err
+	}
+	if changed != 1 {
+		return domain.Stay{}, appErr.ErrConflict
 	}
 	res, err := tx.ExecContext(ctx, "INSERT INTO stays(delegation_id,room_id,status,check_in,idempotency_key,version) VALUES(?,?,?, ?,?,1)", did, rid, domain.StayActive, now.Format(time.RFC3339), key)
 	if err != nil {
 		if stringsContains(err.Error(), "UNIQUE") {
-			var existing domain.Stay
-			var status, checkIn string
-			if queryErr := tx.QueryRowContext(ctx, "SELECT id,delegation_id,room_id,status,check_in,version FROM stays WHERE idempotency_key=?", key).Scan(&existing.ID, &existing.DelegationID, &existing.RoomID, &status, &checkIn, &existing.Version); queryErr != nil {
-				return domain.Stay{}, queryErr
+			// A concurrent request inserted this key first: roll back the room
+			// reservation we made and return the existing stay so no phantom
+			// occupancy slot leaks.
+			_ = tx.Rollback()
+			if ex, qErr := s.findStay(ctx, key); qErr == nil {
+				return ex, nil
 			}
-			existing.Status = domain.StayStatus(status)
-			existing.CheckIn, _ = time.Parse(time.RFC3339, checkIn)
-			return existing, tx.Commit()
+			return domain.Stay{}, appErr.ErrConflict
 		}
 		return domain.Stay{}, err
 	}
@@ -110,20 +114,6 @@ func (s *SQLite) CreateStay(ctx context.Context, did, rid int64, key string, now
 	return domain.Stay{ID: id, DelegationID: did, RoomID: rid, Status: domain.StayActive, CheckIn: now, IdempotencyKey: key, Version: 1}, nil
 }
 
-func (s *SQLite) reserveRoomBeforeStay(ctx context.Context, roomID int64, version int) error {
-	result, err := s.db.ExecContext(ctx, "UPDATE rooms SET occupied=occupied+1,version=version+1 WHERE id=? AND version=?", roomID, version)
-	if err != nil {
-		return err
-	}
-	changed, err := result.RowsAffected()
-	if err != nil {
-		return err
-	}
-	if changed != 1 {
-		return appErr.ErrConflict
-	}
-	return nil
-}
 func stringsContains(s, sub string) bool { return len(s) >= len(sub) && contains(s, sub) }
 func contains(s, sub string) bool {
 	for i := 0; i+len(sub) <= len(s); i++ {
@@ -137,9 +127,15 @@ func (s *SQLite) findStay(ctx context.Context, key string) (domain.Stay, error) 
 	var v domain.Stay
 	var st, ci string
 	err := s.db.QueryRowContext(ctx, "SELECT id,delegation_id,room_id,status,check_in,version FROM stays WHERE idempotency_key=?", key).Scan(&v.ID, &v.DelegationID, &v.RoomID, &st, &ci, &v.Version)
+	if err == sql.ErrNoRows {
+		return domain.Stay{}, appErr.ErrConflict
+	} else if err != nil {
+		return domain.Stay{}, err
+	}
 	v.Status = domain.StayStatus(st)
+	v.IdempotencyKey = key
 	v.CheckIn, _ = time.Parse(time.RFC3339, ci)
-	return v, err
+	return v, nil
 }
 func (s *SQLite) TransitionStay(ctx context.Context, id int64, from, to domain.StayStatus, now time.Time) (domain.Stay, error) {
 	if !from.CanTransition(to) {
