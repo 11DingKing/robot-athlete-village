@@ -2,6 +2,7 @@ package service
 
 import (
 	"context"
+	"fmt"
 	"github.com/11DingKing/robot-athlete-village/internal/audit"
 	"github.com/11DingKing/robot-athlete-village/internal/domain"
 	appErr "github.com/11DingKing/robot-athlete-village/internal/errors"
@@ -21,6 +22,41 @@ func villageService(t *testing.T) (*Village, repository.Store) {
 	store := repository.NewSQLite(db)
 	return NewVillage(store, audit.New(store)), store
 }
+
+// failingAuditStore wraps a Store and makes audit writes fail to simulate an
+// unavailable audit service during admission.
+type failingAuditStore struct{ repository.Store }
+
+func (failingAuditStore) AddAudit(context.Context, domain.AuditEvent) error {
+	return fmt.Errorf("audit service unavailable")
+}
+
+func TestAdmitRevertsStayWhenAuditFails(t *testing.T) {
+	t.Setenv("MIGRATIONS_DIR", "../../migrations")
+	db, e := storage.Open(context.Background(), "file::memory:")
+	if e != nil {
+		t.Fatal(e)
+	}
+	t.Cleanup(func() { db.Close() })
+	base := repository.NewSQLite(db)
+	store := failingAuditStore{Store: base}
+	v := NewVillage(store, audit.New(store))
+
+	admin := domain.User{ID: 1, Role: domain.RoleAdmin}
+	if _, e := v.Admit(context.Background(), admin, 1, 1, "audit-fail"); e == nil {
+		t.Fatal("want admit to fail when audit is unavailable")
+	}
+	var stays, occupied int
+	if e := db.QueryRow("SELECT COUNT(*) FROM stays WHERE idempotency_key='audit-fail'").Scan(&stays); e != nil || stays != 0 {
+		t.Fatalf("residual stays %d err %v", stays, e)
+	}
+	if e := db.QueryRow("SELECT occupied FROM rooms WHERE id=1").Scan(&occupied); e != nil || occupied != 0 {
+		t.Fatalf("residual occupied %d err %v", occupied, e)
+	}
+}
+
+var _ repository.Store = failingAuditStore{}
+
 func TestAdmitRequiresAdmin(t *testing.T) {
 	v, _ := villageService(t)
 	coach := domain.User{ID: 2, Role: domain.RoleCoach}

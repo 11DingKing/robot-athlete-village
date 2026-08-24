@@ -90,3 +90,23 @@ func TestBookingLifecycle(t *testing.T) {
 		t.Fatalf("conflict %v", e)
 	}
 }
+func TestRevertStayReleasesRoom(t *testing.T) {
+	r := newRepo(t)
+	now := time.Now().UTC()
+	st, e := r.CreateStay(context.Background(), 1, 2, "rev", now)
+	if e != nil {
+		t.Fatal(e)
+	}
+	if e = r.RevertStay(context.Background(), st.ID, st.RoomID, st.Version); e != nil {
+		t.Fatal(e)
+	}
+	var n, occ int
+	_ = r.DB().QueryRow("SELECT COUNT(*) FROM stays WHERE id=?", st.ID).Scan(&n)
+	_ = r.DB().QueryRow("SELECT occupied FROM rooms WHERE id=?", st.RoomID).Scan(&occ)
+	if n != 0 || occ != 0 {
+		t.Fatalf("stays %d occupied %d", n, occ)
+	}
+	if e = r.RevertStay(context.Background(), st.ID, st.RoomID, st.Version); e != appErr.ErrConflict {
+		t.Fatalf("want conflict on stale revert got %v", e)
+	}
+}

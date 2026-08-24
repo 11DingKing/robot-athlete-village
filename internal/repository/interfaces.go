@@ -15,6 +15,7 @@ type Store interface {
 	RevokeSession(ctx context.Context, token string) error
 	CreateStay(ctx context.Context, delegationID, roomID int64, key string, now time.Time) (domain.Stay, error)
 	TransitionStay(ctx context.Context, id int64, from, to domain.StayStatus, now time.Time) (domain.Stay, error)
+	RevertStay(ctx context.Context, id, roomID int64, version int) error
 	CreateBooking(ctx context.Context, athleteID, slotID, coachID int64, key string) (domain.Booking, error)
 	TransitionBooking(ctx context.Context, id int64, from, to domain.BookingStatus) (domain.Booking, error)
 	AssignEquipment(ctx context.Context, equipmentID, athleteID int64) (domain.Equipment, error)

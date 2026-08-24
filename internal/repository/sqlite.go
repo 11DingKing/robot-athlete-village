@@ -119,6 +119,24 @@ func (s *SQLite) findStay(ctx context.Context, key string) (domain.Stay, error) 
 	v.CheckIn, _ = time.Parse(time.RFC3339, ci)
 	return v, err
 }
+func (s *SQLite) RevertStay(ctx context.Context, id, roomID int64, version int) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, "DELETE FROM stays WHERE id=? AND status=? AND version=?", id, domain.StayActive, version)
+	if err != nil {
+		return err
+	}
+	if n, _ := res.RowsAffected(); n == 0 {
+		return appErr.ErrConflict
+	}
+	if _, err = tx.ExecContext(ctx, "UPDATE rooms SET occupied=occupied-1,version=version+1 WHERE id=? AND occupied>0", roomID); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
 func (s *SQLite) TransitionStay(ctx context.Context, id int64, from, to domain.StayStatus, now time.Time) (domain.Stay, error) {
 	if !from.CanTransition(to) {
 		return domain.Stay{}, appErr.ErrInvalidState

@@ -37,6 +37,9 @@ func (v *Village) Admit(ctx context.Context, u domain.User, did, rid int64, key 
 	}
 	if v.audit != nil {
 		if err = v.audit.RecordRequired(ctx, u.ID, "stay", fmt.Sprint(st.ID), "admit", "success"); err != nil {
+			if rerr := v.store.RevertStay(ctx, st.ID, st.RoomID, st.Version); rerr != nil {
+				return st, fmt.Errorf("admit audit failed: %w; revert stay: %v", err, rerr)
+			}
 			return st, err
 		}
 	}
