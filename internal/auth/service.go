@@ -20,8 +20,10 @@ func New(store repository.Store, ttl time.Duration) *Service {
 	return &Service{store: store, ttl: ttl, now: func() time.Time { return time.Now().UTC() }}
 }
 func (s *Service) Login(ctx context.Context, email, password string) (string, domain.User, error) {
-	loginCtx := context.WithoutCancel(ctx)
-	u, err := s.store.FindUser(loginCtx, email)
+	if ctx.Err() != nil {
+		return "", domain.User{}, ctx.Err()
+	}
+	u, err := s.store.FindUser(ctx, email)
 	if err != nil {
 		return "", u, appErr.ErrUnauthorized
 	}
@@ -31,7 +33,7 @@ func (s *Service) Login(ctx context.Context, email, password string) (string, do
 	var b [24]byte
 	_, _ = rand.Read(b[:])
 	token := hex.EncodeToString(b[:])
-	if err = s.store.CreateSession(loginCtx, u, token, s.now().Add(s.ttl)); err != nil {
+	if err = s.store.CreateSession(ctx, u, token, s.now().Add(s.ttl)); err != nil {
 		return "", u, err
 	}
 	return token, u, nil

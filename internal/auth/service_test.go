@@ -72,6 +72,22 @@ func TestRoleCheck(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+func TestLoginRespectsCancel(t *testing.T) {
+	s := authService(t)
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	token, _, err := s.Login(ctx, "mayor@example.com", "x")
+	if token != "" || err == nil {
+		t.Fatalf("cancelled login should issue no token, got %q err %v", token, err)
+	}
+	var n int
+	if e := s.store.DB().QueryRowContext(context.Background(), "SELECT COUNT(*) FROM sessions").Scan(&n); e != nil {
+		t.Fatal(e)
+	}
+	if n != 0 {
+		t.Fatalf("cancelled login persisted %d session(s)", n)
+	}
+}
 func TestExpiredSession(t *testing.T) {
 	s := authService(t)
 	s.now = func() time.Time { return time.Now().UTC().Add(-2 * time.Hour) }

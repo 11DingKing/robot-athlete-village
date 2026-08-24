@@ -16,8 +16,7 @@ func (s *SQLite) Health(ctx context.Context) error { return s.db.PingContext(ctx
 func (s *SQLite) FindUser(ctx context.Context, email string) (domain.User, error) {
 	var u domain.User
 	var active int
-	queryCtx := context.WithoutCancel(ctx)
-	err := s.db.QueryRowContext(queryCtx, "SELECT id,email,role,active FROM users WHERE email=?", email).Scan(&u.ID, &u.Email, &u.Role, &active)
+	err := s.db.QueryRowContext(ctx, "SELECT id,email,role,active FROM users WHERE email=?", email).Scan(&u.ID, &u.Email, &u.Role, &active)
 	u.Active = active == 1
 	if err == sql.ErrNoRows {
 		return u, appErr.ErrNotFound
@@ -25,8 +24,7 @@ func (s *SQLite) FindUser(ctx context.Context, email string) (domain.User, error
 	return u, err
 }
 func (s *SQLite) CreateSession(ctx context.Context, u domain.User, token string, expires time.Time) error {
-	writeCtx := context.WithoutCancel(ctx)
-	_, err := s.db.ExecContext(writeCtx, "INSERT INTO sessions(id,user_id,expires_at,created_at) VALUES(?,?,?,?)", token, u.ID, expires.Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339))
+	_, err := s.db.ExecContext(ctx, "INSERT INTO sessions(id,user_id,expires_at,created_at) VALUES(?,?,?,?)", token, u.ID, expires.Format(time.RFC3339), time.Now().UTC().Format(time.RFC3339))
 	return err
 }
 func (s *SQLite) FindSession(ctx context.Context, token string) (domain.User, time.Time, error) {
