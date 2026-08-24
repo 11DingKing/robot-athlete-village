@@ -8,6 +8,7 @@ import (
 	"github.com/11DingKing/robot-athlete-village/internal/domain"
 	appErr "github.com/11DingKing/robot-athlete-village/internal/errors"
 	"github.com/11DingKing/robot-athlete-village/internal/repository"
+	"github.com/11DingKing/robot-athlete-village/internal/telemetry"
 	"time"
 )
 
@@ -64,16 +65,19 @@ func (v *Village) ConfirmTraining(ctx context.Context, u domain.User, id int64) 
 	if err := auth.RequireRole(u, domain.RoleCoach, domain.RoleAdmin); err != nil {
 		return domain.Booking{}, err
 	}
-	b, err := v.store.TransitionBooking(ctx, id, domain.BookingHeld, domain.BookingConfirmed)
-	if err != nil {
-		return b, err
-	}
+	var event domain.AuditEvent
 	if v.audit != nil {
-		if err = v.audit.RecordRequired(ctx, u.ID, "booking", fmt.Sprint(id), "confirm", "success"); err != nil {
-			return b, err
+		event = domain.AuditEvent{
+			ActorUserID: u.ID,
+			EntityType:  "booking",
+			EntityID:    fmt.Sprint(id),
+			Action:      "confirm",
+			Result:      "success",
+			RequestID:   telemetry.RequestID(ctx),
+			CreatedAt:   v.now(),
 		}
 	}
-	return b, nil
+	return v.store.ConfirmBookingAudited(ctx, id, domain.BookingHeld, domain.BookingConfirmed, event)
 }
 func (v *Village) CancelTraining(ctx context.Context, u domain.User, id int64) (domain.Booking, error) {
 	if err := auth.RequireRole(u, domain.RoleCoach, domain.RoleAdmin); err != nil {

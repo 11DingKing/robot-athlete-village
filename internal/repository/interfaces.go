@@ -17,6 +17,7 @@ type Store interface {
 	TransitionStay(ctx context.Context, id int64, from, to domain.StayStatus, now time.Time) (domain.Stay, error)
 	CreateBooking(ctx context.Context, athleteID, slotID, coachID int64, key string) (domain.Booking, error)
 	TransitionBooking(ctx context.Context, id int64, from, to domain.BookingStatus) (domain.Booking, error)
+	ConfirmBookingAudited(ctx context.Context, id int64, from, to domain.BookingStatus, event domain.AuditEvent) (domain.Booking, error)
 	AssignEquipment(ctx context.Context, equipmentID, athleteID int64) (domain.Equipment, error)
 	QueueMaintenance(ctx context.Context, equipmentID int64, now time.Time) (domain.MaintenanceJob, error)
 	ClaimMaintenance(ctx context.Context, now time.Time) (domain.MaintenanceJob, error)

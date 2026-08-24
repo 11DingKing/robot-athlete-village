@@ -54,6 +54,27 @@ func TestReserveConfirm(t *testing.T) {
 		t.Fatal(e)
 	}
 }
+func TestConfirmAuditFailureLeavesHeld(t *testing.T) {
+	v, store := villageService(t)
+	coach := domain.User{ID: 2, Role: domain.RoleCoach}
+	b, e := v.ReserveTraining(context.Background(), coach, 1, 1, "ba")
+	if e != nil {
+		t.Fatal(e)
+	}
+	if _, e = store.DB().Exec("DROP TABLE audit_events"); e != nil {
+		t.Fatal(e)
+	}
+	if _, e = v.ConfirmTraining(context.Background(), coach, b.ID); e == nil {
+		t.Fatal("want error when audit is unavailable")
+	}
+	var status string
+	if e = store.DB().QueryRow("SELECT status FROM bookings WHERE id=?", b.ID).Scan(&status); e != nil {
+		t.Fatal(e)
+	}
+	if domain.BookingStatus(status) != domain.BookingHeld {
+		t.Fatalf("want held after audit failure, got %s", status)
+	}
+}
 func TestCheckinIdempotent(t *testing.T) {
 	v, store := villageService(t)
 	coach := domain.User{ID: 2, Role: domain.RoleCoach}

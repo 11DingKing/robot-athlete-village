@@ -3,6 +3,7 @@ package repository
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"github.com/11DingKing/robot-athlete-village/internal/domain"
 	appErr "github.com/11DingKing/robot-athlete-village/internal/errors"
 	"time"
@@ -195,6 +196,33 @@ func (s *SQLite) TransitionBooking(ctx context.Context, id int64, from, to domai
 	n, _ := res.RowsAffected()
 	if n == 0 {
 		return domain.Booking{}, appErr.ErrConflict
+	}
+	return domain.Booking{ID: id, Status: to}, nil
+}
+func (s *SQLite) ConfirmBookingAudited(ctx context.Context, id int64, from, to domain.BookingStatus, event domain.AuditEvent) (domain.Booking, error) {
+	if !from.CanTransition(to) {
+		return domain.Booking{}, appErr.ErrInvalidState
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return domain.Booking{}, err
+	}
+	defer tx.Rollback()
+	res, err := tx.ExecContext(ctx, "UPDATE bookings SET status=?,version=version+1 WHERE id=? AND status=?", to, id, from)
+	if err != nil {
+		return domain.Booking{}, err
+	}
+	n, _ := res.RowsAffected()
+	if n == 0 {
+		return domain.Booking{}, appErr.ErrConflict
+	}
+	if event.Result != "" {
+		if _, err = tx.ExecContext(ctx, "INSERT INTO audit_events(actor_user_id,entity_type,entity_id,action,result,request_id,created_at) VALUES(?,?,?,?,?,?,?)", event.ActorUserID, event.EntityType, event.EntityID, event.Action, event.Result, event.RequestID, event.CreatedAt.Format(time.RFC3339)); err != nil {
+			return domain.Booking{}, fmt.Errorf("required audit write: %w", err)
+		}
+	}
+	if err = tx.Commit(); err != nil {
+		return domain.Booking{}, err
 	}
 	return domain.Booking{ID: id, Status: to}, nil
 }
