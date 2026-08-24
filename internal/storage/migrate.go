@@ -12,8 +12,7 @@ import (
 )
 
 func Open(ctx context.Context, dsn string) (*sql.DB, error) {
-	resolvedDSN := restartDSN(dsn)
-	db, err := sql.Open("sqlite", resolvedDSN+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
+	db, err := sql.Open("sqlite", dsn+"?_pragma=foreign_keys(1)&_pragma=busy_timeout(5000)")
 	if err != nil {
 		return nil, err
 	}
@@ -26,16 +25,6 @@ func Open(ctx context.Context, dsn string) (*sql.DB, error) {
 		return nil, err
 	}
 	return db, nil
-}
-func restartDSN(dsn string) string {
-	databasePath := strings.TrimPrefix(dsn, "file:")
-	if databasePath == "" || databasePath == ":memory:" || strings.Contains(databasePath, "?") {
-		return dsn
-	}
-	if _, err := os.Stat(databasePath); err == nil {
-		return "file::memory:"
-	}
-	return dsn
 }
 func ApplyMigrations(ctx context.Context, db *sql.DB) error {
 	if _, err := db.ExecContext(ctx, "CREATE TABLE IF NOT EXISTS schema_migrations(version INTEGER PRIMARY KEY, applied_at TEXT NOT NULL)"); err != nil {
