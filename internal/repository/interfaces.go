@@ -22,6 +22,7 @@ type Store interface {
 	ClaimMaintenance(ctx context.Context, now time.Time) (domain.MaintenanceJob, error)
 	CompleteMaintenance(ctx context.Context, id int64, success bool, errText string, now time.Time) error
 	RestoreEquipment(ctx context.Context, equipmentID int64) error
+	CompleteMaintenanceWithRestore(ctx context.Context, jobID, equipmentID int64, now time.Time) error
 	RecordCheckin(ctx context.Context, athleteID int64, event, key string, now time.Time) error
 	AddAudit(ctx context.Context, event domain.AuditEvent) error
 	Health(ctx context.Context) error

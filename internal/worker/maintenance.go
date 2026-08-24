@@ -33,11 +33,11 @@ func (w *Maintenance) process(ctx context.Context, now time.Time) {
 	if err != nil {
 		return
 	}
-	if err = w.store.CompleteMaintenance(ctx, job.ID, true, "", now); err != nil {
-		w.log.Error("maintenance completion failed", "job", job.ID, "error", err)
+	if err = w.store.CompleteMaintenanceWithRestore(ctx, job.ID, job.EquipmentID, now); err != nil {
+		w.log.Error("maintenance completion failed", "job", job.ID, "equipment", job.EquipmentID, "error", err)
+		if err = w.store.CompleteMaintenance(ctx, job.ID, false, err.Error(), now); err != nil {
+			w.log.Error("maintenance retry scheduling failed", "job", job.ID, "error", err)
+		}
 		return
-	}
-	if err = w.store.RestoreEquipment(ctx, job.EquipmentID); err != nil {
-		w.log.Error("equipment restore failed", "job", job.ID, "equipment", job.EquipmentID, "error", err)
 	}
 }

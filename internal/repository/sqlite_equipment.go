@@ -101,6 +101,30 @@ func (s *SQLite) RestoreEquipment(ctx context.Context, equipmentID int64) error 
 	}
 	return nil
 }
+func (s *SQLite) CompleteMaintenanceWithRestore(ctx context.Context, jobID, equipmentID int64, now time.Time) error {
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+	restored, err := tx.ExecContext(ctx, "UPDATE equipment SET status='ready',assigned_athlete_id=NULL,version=version+1 WHERE id=? AND status='maintenance'", equipmentID)
+	if err != nil {
+		return err
+	}
+	restoredRows, _ := restored.RowsAffected()
+	if restoredRows != 1 {
+		return appErr.ErrConflict
+	}
+	completed, err := tx.ExecContext(ctx, "UPDATE maintenance_jobs SET status='done',last_error='',next_run_at=? WHERE id=? AND status='running'", now.Format(time.RFC3339), jobID)
+	if err != nil {
+		return err
+	}
+	completedRows, _ := completed.RowsAffected()
+	if completedRows != 1 {
+		return appErr.ErrConflict
+	}
+	return tx.Commit()
+}
 func (s *SQLite) RecordCheckin(ctx context.Context, aid int64, event, key string, now time.Time) error {
 	_, err := s.db.ExecContext(ctx, "INSERT OR IGNORE INTO checkins(athlete_id,event_code,checked_at,idempotency_key) VALUES(?,?,?,?)", aid, event, now.Format(time.RFC3339), key)
 	return err
