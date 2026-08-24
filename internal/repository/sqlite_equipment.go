@@ -39,22 +39,24 @@ func (s *SQLite) QueueMaintenance(ctx context.Context, eid int64, now time.Time)
 	return domain.MaintenanceJob{ID: id, EquipmentID: eid, Status: "queued", NextRunAt: now}, nil
 }
 func (s *SQLite) ClaimMaintenance(ctx context.Context, now time.Time) (domain.MaintenanceJob, error) {
-	claimCtx := context.WithoutCancel(ctx)
-	tx, err := s.db.BeginTx(claimCtx, nil)
+	if err := ctx.Err(); err != nil {
+		return domain.MaintenanceJob{}, err
+	}
+	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return domain.MaintenanceJob{}, err
 	}
 	defer tx.Rollback()
 	var j domain.MaintenanceJob
 	var run string
-	err = tx.QueryRowContext(claimCtx, "SELECT id,equipment_id,attempts,next_run_at FROM maintenance_jobs WHERE status IN ('queued','retry') AND next_run_at<=? ORDER BY id LIMIT 1", now.Format(time.RFC3339)).Scan(&j.ID, &j.EquipmentID, &j.Attempts, &run)
+	err = tx.QueryRowContext(ctx, "SELECT id,equipment_id,attempts,next_run_at FROM maintenance_jobs WHERE status IN ('queued','retry') AND next_run_at<=? ORDER BY id LIMIT 1", now.Format(time.RFC3339)).Scan(&j.ID, &j.EquipmentID, &j.Attempts, &run)
 	if err == sql.ErrNoRows {
 		return j, appErr.ErrNotFound
 	}
 	if err != nil {
 		return j, err
 	}
-	if _, err = tx.ExecContext(claimCtx, "UPDATE maintenance_jobs SET status='running',attempts=attempts+1 WHERE id=?", j.ID); err != nil {
+	if _, err = tx.ExecContext(ctx, "UPDATE maintenance_jobs SET status='running',attempts=attempts+1 WHERE id=?", j.ID); err != nil {
 		return j, err
 	}
 	if err = tx.Commit(); err != nil {

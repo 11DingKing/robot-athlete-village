@@ -45,3 +45,18 @@ func TestMaintenanceStopsOnCancel(t *testing.T) {
 		t.Fatal("worker did not stop")
 	}
 }
+func TestMaintenanceProcessHonorsCanceledContext(t *testing.T) {
+	s := workerStore(t)
+	now := time.Now().UTC()
+	if _, e := s.QueueMaintenance(context.Background(), 1, now); e != nil {
+		t.Fatal(e)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	w := NewMaintenance(s, time.Millisecond, slog.Default())
+	w.process(ctx, now.Add(time.Second))
+	var status string
+	if e := s.DB().QueryRow("SELECT status FROM maintenance_jobs WHERE equipment_id=?", 1).Scan(&status); e != nil || status != "queued" {
+		t.Fatalf("want queued, got %s %v", status, e)
+	}
+}

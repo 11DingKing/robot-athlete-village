@@ -29,12 +29,14 @@ func (w *Maintenance) Run(ctx context.Context) {
 	}
 }
 func (w *Maintenance) process(ctx context.Context, now time.Time) {
-	workCtx := context.WithoutCancel(ctx)
-	job, err := w.store.ClaimMaintenance(workCtx, now)
+	if err := ctx.Err(); err != nil {
+		return
+	}
+	job, err := w.store.ClaimMaintenance(ctx, now)
 	if err != nil {
 		return
 	}
-	if err = w.store.CompleteMaintenance(workCtx, job.ID, true, "", now); err != nil {
+	if err = w.store.CompleteMaintenance(ctx, job.ID, true, "", now); err != nil {
 		w.log.Error("maintenance completion failed", "job", job.ID, "error", err)
 	}
 }
