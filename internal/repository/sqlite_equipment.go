@@ -14,6 +14,20 @@ func (s *SQLite) AssignEquipment(ctx context.Context, eid, aid int64) (domain.Eq
 		return domain.Equipment{}, err
 	}
 	defer tx.Rollback()
+	// Re-check athlete eligibility inside the same transaction that mutates
+	// the equipment row. A separate read in the service layer races with an
+	// operations withdrawal between the check and the assignment: closing the
+	// gap here guarantees the athlete is still ready at assignment time.
+	var athleteStatus string
+	if err = tx.QueryRowContext(ctx, "SELECT status FROM athletes WHERE id=?", aid).Scan(&athleteStatus); err != nil {
+		if err == sql.ErrNoRows {
+			return domain.Equipment{}, appErr.ErrNotFound
+		}
+		return domain.Equipment{}, err
+	}
+	if athleteStatus != string(domain.AthleteReady) {
+		return domain.Equipment{}, appErr.ErrInvalidState
+	}
 	var status string
 	var ver int
 	if err = tx.QueryRowContext(ctx, "SELECT status,version FROM equipment WHERE id=?", eid).Scan(&status, &ver); err != nil {

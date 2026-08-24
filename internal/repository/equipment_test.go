@@ -2,6 +2,8 @@ package repository
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"github.com/11DingKing/robot-athlete-village/internal/domain"
 	appErr "github.com/11DingKing/robot-athlete-village/internal/errors"
 	"testing"
@@ -27,6 +29,26 @@ func TestEquipmentWorkflow(t *testing.T) {
 	}
 	if err = r.CompleteMaintenance(context.Background(), j.ID, true, "", time.Now().UTC()); err != nil {
 		t.Fatal(err)
+	}
+}
+func TestAssignEquipmentRejectsWithdrawnAthlete(t *testing.T) {
+	r := newRepo(t)
+	// Simulate the race window: operations marks the athlete withdrawn after
+	// the service-layer eligibility check but before the equipment assignment.
+	if _, e := r.DB().Exec("UPDATE athletes SET status='withdrawn' WHERE id=1"); e != nil {
+		t.Fatal(e)
+	}
+	eq, err := r.AssignEquipment(context.Background(), 2, 1)
+	if !errors.Is(err, appErr.ErrInvalidState) {
+		t.Fatalf("want invalid_state got %+v %v", eq, err)
+	}
+	var status string
+	var assigned sql.NullInt64
+	if e := r.DB().QueryRow("SELECT status,assigned_athlete_id FROM equipment WHERE id=2").Scan(&status, &assigned); e != nil {
+		t.Fatal(e)
+	}
+	if status != string(domain.EquipmentReady) || assigned.Valid {
+		t.Fatalf("equipment must remain ready and unassigned: %s %v", status, assigned)
 	}
 }
 func TestMaintenanceRetry(t *testing.T) {

@@ -25,6 +25,13 @@ const (
 	BookingCancelled BookingStatus = "cancelled"
 )
 
+type AthleteStatus string
+
+const (
+	AthleteReady      AthleteStatus = "ready"
+	AthleteWithdrawn  AthleteStatus = "withdrawn"
+)
+
 type EquipmentStatus string
 
 const (

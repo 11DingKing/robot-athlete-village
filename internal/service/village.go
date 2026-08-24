@@ -85,7 +85,7 @@ func (v *Village) Assign(ctx context.Context, u domain.User, eid, aid int64) (do
 	if err != nil {
 		return domain.Equipment{}, err
 	}
-	if athlete.Status != "ready" {
+	if athlete.Status != string(domain.AthleteReady) {
 		return domain.Equipment{}, appErr.ErrInvalidState
 	}
 	return v.store.AssignEquipment(ctx, eid, aid)
