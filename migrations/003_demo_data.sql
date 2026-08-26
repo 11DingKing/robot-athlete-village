@@ -1,0 +1,4 @@
+INSERT OR IGNORE INTO delegations(id,name,country_code,status,created_at) VALUES (1,'北京示范队','CN','approved','2026-01-01T00:00:00Z'),(2,'北欧实验队','SE','approved','2026-01-01T00:00:00Z');
+INSERT OR IGNORE INTO athletes(id,delegation_id,display_name,category,status,created_at) VALUES (1,1,'小虎机器人','mobility','ready','2026-01-01T00:00:00Z'),(2,1,'赤兔机器人','balance','ready','2026-01-01T00:00:00Z'),(3,2,'极光机器人','mobility','ready','2026-01-01T00:00:00Z');
+INSERT OR IGNORE INTO training_slots(id,venue_id,starts_at,ends_at,status) VALUES (1,1,'2026-08-25T09:00:00Z','2026-08-25T10:00:00Z','open'),(2,1,'2026-08-25T10:00:00Z','2026-08-25T11:00:00Z','open'),(3,2,'2026-08-25T13:00:00Z','2026-08-25T14:00:00Z','open');
+INSERT OR IGNORE INTO equipment(id,serial,kind,status,version) VALUES (1,'RV-1001','gyro','ready',1),(2,'RV-1002','camera','ready',1),(3,'RV-1003','battery','ready',1);
